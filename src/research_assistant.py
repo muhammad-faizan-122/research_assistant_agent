@@ -11,14 +11,14 @@ from langgraph.constants import Send
 from langgraph.graph import END, START, StateGraph
 from src import states
 from src import prompts
+from src.utils import safe_invoke_llm
 
-### LLM
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
     max_tokens=None,
     timeout=None,
-    max_retries=2,
+    max_retries=0,
 )
 
 
@@ -38,12 +38,11 @@ def create_analysts(state: states.GenerateAnalystsState):
         human_analyst_feedback=human_analyst_feedback,
         max_analysts=max_analysts,
     )
-
+    msg = [SystemMessage(content=system_message)] + [
+        HumanMessage(content="Generate the set of analysts.")
+    ]
     # Generate question
-    analysts = structured_llm.invoke(
-        [SystemMessage(content=system_message)]
-        + [HumanMessage(content="Generate the set of analysts.")]
-    )
+    analysts = safe_invoke_llm(structured_llm, msg)
 
     # Write the list of analysis to state
     return {"analysts": analysts.analysts}
@@ -63,7 +62,8 @@ def generate_question(state: states.InterviewState):
 
     # Generate question
     system_message = prompts.question_instructions.format(goals=analyst.persona)
-    question = llm.invoke([SystemMessage(content=system_message)] + messages)
+    msg = [SystemMessage(content=system_message)] + messages
+    question = safe_invoke_llm(llm, msg)
 
     # Write messages to state
     return {"messages": [question]}
@@ -77,9 +77,8 @@ def search_web(state: states.InterviewState):
 
     # Search query
     structured_llm = llm.with_structured_output(states.SearchQuery)
-    search_query = structured_llm.invoke(
-        [SystemMessage(content=prompts.search_instructions)] + state["messages"]
-    )
+    msg = [SystemMessage(content=prompts.search_instructions)] + state["messages"]
+    search_query = safe_invoke_llm(structured_llm, msg)
 
     # Search
     data = tavily_search.invoke({"query": search_query.search_query})
@@ -101,9 +100,8 @@ def search_wikipedia(state: states.InterviewState):
 
     # Search query
     structured_llm = llm.with_structured_output(states.SearchQuery)
-    search_query = structured_llm.invoke(
-        [SystemMessage(content=prompts.search_instructions)] + state["messages"]
-    )
+    msg = [SystemMessage(content=prompts.search_instructions)] + state["messages"]
+    search_query = safe_invoke_llm(structured_llm, msg)
 
     # Search
     search_docs = WikipediaLoader(
@@ -133,7 +131,8 @@ def generate_answer(state: states.InterviewState):
     system_message = prompts.answer_instructions.format(
         goals=analyst.persona, context=context
     )
-    answer = llm.invoke([SystemMessage(content=system_message)] + messages)
+    msg = [SystemMessage(content=system_message)] + messages
+    answer = safe_invoke_llm(llm, msg)
 
     # Name the message as coming from the expert
     answer.name = "expert"
@@ -192,10 +191,10 @@ def write_section(state: states.InterviewState):
     system_message = prompts.section_writer_instructions.format(
         focus=analyst.description
     )
-    section = llm.invoke(
-        [SystemMessage(content=system_message)]
-        + [HumanMessage(content=f"Use this source to write your section: {context}")]
-    )
+    msg = [SystemMessage(content=system_message)] + [
+        HumanMessage(content=f"Use this source to write your section: {context}")
+    ]
+    section = safe_invoke_llm(llm, msg)
 
     # Append it to state
     return {"sections": [section.content]}
@@ -265,10 +264,11 @@ def write_report(state: states.ResearchGraphState):
     system_message = prompts.report_writer_instructions.format(
         topic=topic, context=formatted_str_sections
     )
-    report = llm.invoke(
-        [SystemMessage(content=system_message)]
-        + [HumanMessage(content=f"Write a report based upon these memos.")]
-    )
+    msg = [SystemMessage(content=system_message)] + [
+        HumanMessage(content=f"Write a report based upon these memos.")
+    ]
+    report = safe_invoke_llm(llm, msg)
+
     return {"content": report.content}
 
 
@@ -287,9 +287,9 @@ def write_introduction(state: states.ResearchGraphState):
     instructions = prompts.intro_conclusion_instructions.format(
         topic=topic, formatted_str_sections=formatted_str_sections
     )
-    intro = llm.invoke(
-        [instructions] + [HumanMessage(content=f"Write the report introduction")]
-    )
+    msg = [instructions] + [HumanMessage(content=f"Write the report introduction")]
+    intro = safe_invoke_llm(llm, msg)
+
     return {"introduction": intro.content}
 
 
@@ -308,9 +308,9 @@ def write_conclusion(state: states.ResearchGraphState):
     instructions = prompts.intro_conclusion_instructions.format(
         topic=topic, formatted_str_sections=formatted_str_sections
     )
-    conclusion = llm.invoke(
-        [instructions] + [HumanMessage(content=f"Write the report conclusion")]
-    )
+    msg = [instructions] + [HumanMessage(content=f"Write the report conclusion")]
+    conclusion = safe_invoke_llm(llm, msg)
+
     return {"conclusion": conclusion.content}
 
 
